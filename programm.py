@@ -1,8 +1,10 @@
 # from PyQt4 import QtGui
+from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtWidgets import QDialog, QLineEdit, QPushButton, QVBoxLayout, QMessageBox, QMainWindow, QApplication, \
-    QLabel, QWidget, QAction
+    QLabel, QWidget, QAction, qApp
 # from mainwindow import Ui_MainWindow
 from PyQt5.uic import loadUi
+import sqlite3
 
 
 class Login(QDialog):
@@ -46,7 +48,21 @@ class Window(QMainWindow):
             loadUi("resources/window.ui", self)
             self.showMaximized()
 
+            self.about_action.setIcon(QIcon('resources/Help.png'))
             self.about_action.triggered.connect(self.about)
+
+            self.quit_action.setIcon(QIcon('resources/Exit.png'))
+            # self.quit_action.setIcon(QIcon(qApp.style().standardIcon(QStyle.SP_DialogCancelButton)))
+            self.quit_action.setShortcut('Ctrl+Q')
+            self.quit_action.triggered.connect(qApp.quit)
+
+            # Подключение к базе
+            conn = sqlite3.connect('family_finances.db')
+            # Создание курсора
+            self.cur_db = conn.cursor()
+
+            self.read_incomes_table(self.cur_db)
+
 
 
         except FileNotFoundError:
@@ -60,9 +76,29 @@ class Window(QMainWindow):
     #     self.tab = QWidget()
     #     self.tab_widget.addTab(self.tab, "Text Tab")
 
+    def read_incomes_table(self, cur_db):
+        import datetime
+        print('read incomes table')
+        cur_db.execute('SELECT * FROM incomes')
+        row = cur_db.fetchone()
+        while row is not None:
+            print(row)
+            date_end = datetime.datetime.fromtimestamp(row[2]).strftime('%Y-%m-%d %H:%M:%S')
+            date_add = datetime.datetime.fromtimestamp(row[3]).strftime('%Y-%m-%d %H:%M:%S')
+            print(date_end)
+            print(date_add)
+
+            row = cur_db.fetchone()
+
+
+
     def about(self):
         QMessageBox.about(self, "О программе",
-                          "<strong>Домашняя бухгалтерия</strong><br>Суворов Дмитрий<br/>dimka59ru@gmail.com")
+                          "<strong>Домашняя бухгалтерия</strong>"
+                          "<br/>Суворов Дмитрий<br/>"
+                          "dimka59ru@gmail.com")
+
+
 
 
 

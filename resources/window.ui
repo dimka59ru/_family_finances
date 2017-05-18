@@ -101,6 +101,44 @@
        <attribute name="title">
         <string>Статьи доходов</string>
        </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_4">
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_2">
+          <item>
+           <widget class="QGroupBox" name="groupBox_3">
+            <property name="title">
+             <string>Список</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="groupBox_4">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>300</width>
+              <height>0</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>300</width>
+              <height>16777215</height>
+             </size>
+            </property>
+            <property name="title">
+             <string>Добавить</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
       </widget>
       <widget class="QWidget" name="tab_item_out">
        <attribute name="title">
@@ -124,6 +162,7 @@
     <property name="title">
      <string>Файл</string>
     </property>
+    <addaction name="quit_action"/>
    </widget>
    <widget class="QMenu" name="menu_2">
     <property name="title">
@@ -148,6 +187,11 @@
   <action name="action_3">
    <property name="text">
     <string>Статьи расходов</string>
+   </property>
+  </action>
+  <action name="quit_action">
+   <property name="text">
+    <string>Выход</string>
    </property>
   </action>
  </widget>
