@@ -1,6 +1,6 @@
 # from PyQt4 import QtGui
 from PyQt5.QtCore import QDateTime, QDate
-from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtGui import QIcon, QPixmap, QPalette, QColor
 from PyQt5.QtWidgets import QDialog, QLineEdit, QPushButton, QVBoxLayout, QMessageBox, QMainWindow, QApplication, \
     QLabel, QWidget, QAction, qApp, QAbstractItemView, QTableWidgetItem
 # from mainwindow import Ui_MainWindow
@@ -14,6 +14,7 @@ class Login(QDialog):
     def __init__(self, parent=None):
         super(Login, self).__init__(parent)
         self.setWindowTitle('Login')
+        self.setWindowIcon(QIcon('resources/Accounting.png'))
 
         self.text_name = QLineEdit(self)
         self.text_pass = QLineEdit(self)
@@ -50,6 +51,7 @@ class Window(QMainWindow):
 
         try:
             loadUi("resources/window.ui", self)
+            self.setWindowIcon(QIcon('resources/Accounting.png'))
             # self.showMaximized()
             self.show()
 
@@ -61,27 +63,46 @@ class Window(QMainWindow):
             self.quit_action.setShortcut('Ctrl+Q')
             self.quit_action.triggered.connect(qApp.quit)
 
-            # Подключение к базе
-            self.conn = sqlite3.connect('family_finances.db')
+            # Подключение к базе SQLite
+            try:
+                self.conn = sqlite3.connect('family_finances.db')
+            except sqlite3.DatabaseError as err:
+                QMessageBox.warning(
+                    self, 'Error', '#1 Error db: {}'.format(err))
+
             # Создание курсора
             self.cur_db = self.conn.cursor()
 
-            # Инициализация таблицы статей доходов
-            self.init_table_incomes()
 
-            # Вывод статей дохода в таблицу
-            self.get_row_table_incomes()
+
+            # Инициализация таблиц
+            self.column_name_income = ["Статья доходов", "Действительна до"]
+            self.column_name_costs = ["Статья расходов", "Действительна до"]
+            self.column_name_table_records_incomes = ["Дата занесения", "Статья дохода", "Сумма"]
+            self.column_name_table_records_costs = ["Дата занесения", "Статья расхода", "Сумма"]
+            self.init_table(self.table_incomes, self.column_name_income)
+            self.init_table(self.table_costs, self.column_name_costs)
+            self.init_table(self.table_records_incomes, self.column_name_table_records_incomes)
+            self.init_table(self.table_records_costs, self.column_name_table_records_costs)
+
+            # Получение данных из БД
+            self.update_data_in_ui()
+
 
             # Нажатие кнопки добавления статьи доходов
             self.button_add_item_income.clicked.connect(self.press_button_add_item_income)
+            self.button_add_item_costs.clicked.connect(self.press_button_add_item_costs)
 
             #  Установим в поле с датой действия дату + год вперед
-            self.date_edit_add_item_income.setDate(datetime.date.today() + datetime.timedelta(365))
+            self.set_date_in_date_edit(self.date_edit_add_item_income)
+            self.set_date_in_date_edit(self.date_edit_add_item_costs)
+
             self.date_edit_add_item_income.setEnabled(False)
+            self.date_edit_add_item_costs.setEnabled(False)
 
-            # Статус чекбокса
-            self.check_box_add_item_income.stateChanged.connect(self.check_box_add_item_income_state_changed)
-
+            # Статус времени при отметке чекбокса
+            self.checkbox_add_item_income.stateChanged.connect(self.changed_state_date_edit_income)
+            self.checkbox_add_item_costs.stateChanged.connect(self.changed_state_date_edit_costs)
 
 
         except FileNotFoundError:
@@ -90,73 +111,148 @@ class Window(QMainWindow):
             # self.ui = Ui_MainWindow()
             # self.ui.setupUi(self)
 
-    def check_box_add_item_income_state_changed(self):
-        if self.check_box_add_item_income.isChecked():
+    def update_data_in_ui(self):
+        # Получим список статей дохода
+        self.data_incomes = self.get_data_incomes()
+        self.data_costs = self.get_data_costs()
+
+        # Вывод статей в таблицы
+        self.write_in_table(self.data_incomes, self.table_incomes)
+        self.write_in_table(self.data_costs, self.table_costs)
+
+        # Заполнение выпадающих списков статей
+        self.write_in_combobox(self.data_incomes, self.combobox_incomes)
+        self.write_in_combobox(self.data_costs, self.combobox_costs)
+
+
+
+    def set_date_in_date_edit(self, date_edit):
+        """ Установит в поле с датой действия дату + год вперед """
+        date_edit.setDate(datetime.date.today() + datetime.timedelta(365))
+
+    def changed_state_date_edit_income(self):
+        if self.checkbox_add_item_income.isChecked():
             self.date_edit_add_item_income.setEnabled(True)
         else:
             self.date_edit_add_item_income.setEnabled(False)
 
+    def changed_state_date_edit_costs(self):
+        if self.checkbox_add_item_costs.isChecked():
+            self.date_edit_add_item_costs.setEnabled(True)
+        else:
+            self.date_edit_add_item_costs.setEnabled(False)
+
     # Функция при нажатии кнопки добавления статьи доходов
     def press_button_add_item_income(self):
-        item_income = self.line_edit_add_item_income.text()
-        item_income = " ".join(item_income.split())  # Удалим лишние пробелы
+        text = self.line_edit_add_item_income.text()
+        text = " ".join(text.split())  # Удалим лишние пробелы
 
-        if self.check_box_add_item_income.isChecked():
+        if self.checkbox_add_item_income.isChecked():
             date = self.get_unix_time(self.date_edit_add_item_income.date().toPyDate())
         else:
             date = 0
 
-        if not item_income:
+        if not text:
             QMessageBox.warning(
                 self, 'Error', 'Не заполнено наименование!')
         else:
             try:
-                self.add_item_income(item_income, date)
+                self.add_item_income(text, date)
             except Exception as e:
                 print(e)
             else:
-                self.get_row_table_incomes()
+                self.update_data_in_ui()
 
         self.line_edit_add_item_income.clear()
+
+    def press_button_add_item_costs(self):
+        text = self.line_edit_add_item_costs.text()
+        text = " ".join(text.split())  # Удалим лишние пробелы
+
+        if self.checkbox_add_item_costs.isChecked():
+            date = self.get_unix_time(self.date_edit_add_item_costs.date().toPyDate())
+        else:
+            date = 0
+
+        if not text:
+            QMessageBox.warning(
+                self, 'Error', 'Не заполнено наименование!')
+        else:
+            try:
+                self.add_item_costs(text, date)
+            except Exception as e:
+                print(e)
+            else:
+                self.update_data_in_ui()
+        self.line_edit_add_item_costs.clear()
 
     # Функция добавления статьи доходов в БД
     def add_item_income(self, name, expiration_date):
         try:
             self.cur_db.execute(
-                "INSERT INTO incomes (name, expiration_date) VALUES ('{}','{}')".format(name, expiration_date))
+                "INSERT INTO incomes (name, expiration_date) VALUES (?, ?)", (name, expiration_date))
         except sqlite3.DatabaseError as err:
             QMessageBox.warning(
-                self, 'Error', ' Error: {}'.format(err))
+                self, 'Error', '#2 Error db: {}'.format(err))
         else:
             self.conn.commit()
 
-    # Функция инициализации таблицы статей доходов
-    def init_table_incomes(self):
-        column_name = ["Статья дохода", "Действительна до"]
-        row_count = 3
-        self.table_incomes.horizontalHeader().setStretchLastSection(True)
-        # self.table_incomes.setRowCount(row_count)  # Устанавливаем количество строк
-        self.table_incomes.setColumnCount(len(column_name))  # Устанавливаем количество столбцов
-        # self.table_incomes.horizontalHeader().resizeSection(0, 1000)  # Ширина столбцов
+    # Функция добавления статьи расходов в БД
+    def add_item_costs(self, name, expiration_date):
+        try:
+            self.cur_db.execute(
+                "INSERT INTO costs (name, expiration_date) VALUES (?, ?)", (name, expiration_date))
+        except sqlite3.DatabaseError as err:
+            QMessageBox.warning(
+                self, 'Error', '#3 Error db: {}'.format(err))
+        else:
+            self.conn.commit()
 
-        self.table_incomes.setHorizontalHeaderLabels(column_name)  # Именуем столбцы таблицы
-        self.table_incomes.verticalHeader().setDefaultSectionSize(22)  # Устанавливаем высоту строк
-        self.table_incomes.setSelectionBehavior(QAbstractItemView.SelectRows)  # Выделяем только строки
-        self.table_incomes.setSelectionMode(QAbstractItemView.SingleSelection)  # Выделяем только одну строку
-        self.table_incomes.setEditTriggers(QAbstractItemView.NoEditTriggers)  # Запрет редактирования таблицы
+    # Функция инициализации таблиц
+    def init_table(self, table, column_name):
+        table.horizontalHeader().setStretchLastSection(True)
+        table.setColumnCount(len(column_name))  # Устанавливаем количество столбцов
+        table.setHorizontalHeaderLabels(column_name)  # Именуем столбцы таблицы
+        table.verticalHeader().setDefaultSectionSize(22)  # Устанавливаем высоту строк
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)  # Выделяем только строки
+        table.setSelectionMode(QAbstractItemView.SingleSelection)  # Выделяем только одну строку
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # Запрет редактирования таблицы
 
-    # Функция вывода записей в таблице статей доходов
-    def get_row_table_incomes(self):
-        self.table_incomes.clearContents()
-        self.table_incomes.setRowCount(0)
+    def get_data_incomes(self):
+        try:
+            self.cur_db.execute('SELECT * FROM incomes')
+            return self.cur_db.fetchall()
+        except sqlite3.DatabaseError as err:
+            QMessageBox.warning(
+                self, 'Error', '#4 Error db: {}'.format(err))
 
-        self.cur_db.execute('SELECT * FROM incomes')
-        all_data = self.cur_db.fetchall()
-        for row in all_data:
-            inx = all_data.index(row)
-            self.table_incomes.insertRow(inx)
-            self.table_incomes.setItem(inx, 0, QTableWidgetItem(str(row[1])))
-            self.table_incomes.setItem(inx, 1, QTableWidgetItem(str(self.convert_date(row[2]))))
+    def get_data_costs(self):
+        try:
+            self.cur_db.execute('SELECT * FROM costs')
+            return self.cur_db.fetchall()
+        except sqlite3.DatabaseError as err:
+            QMessageBox.warning(
+                self, 'Error', '#5 Error db: {}'.format(err))
+
+
+    # Функция вывода записей в таблице статей доходов/расходов
+    def write_in_table(self, data, table):
+        table.clearContents()
+        table.setRowCount(0)
+        for row in data:
+            inx = data.index(row)
+            table.insertRow(inx)
+            table.setItem(inx, 0, QTableWidgetItem(str(row[1])))
+            if row[2] == 0:
+                table.setItem(inx, 1, QTableWidgetItem("Бессрочно"))
+            else:
+                table.setItem(inx, 1, QTableWidgetItem(str(self.convert_date(row[2]))))
+
+    # Функция вывода записей в комбобоксы
+    def write_in_combobox(self, data, combobox):
+        combobox.clear()
+        for row in data:
+            combobox.addItem(str(row[1]))
 
     def convert_date(self, unixtime):
         return datetime.datetime.fromtimestamp(unixtime).strftime('%Y-%m-%d %H:%M:%S')
@@ -176,6 +272,11 @@ if __name__ == '__main__':
     import sys
 
     app = QApplication(sys.argv)
+    app.setStyle("fusion")
+    p = QPalette
+    p = qApp.palette()
+    p.setColor(QPalette.Highlight, QColor(77, 98, 120))
+    qApp.setPalette(p)
     login = Login()
 
     if login.exec_() == QDialog.Accepted:
