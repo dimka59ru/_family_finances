@@ -104,6 +104,8 @@ class Window(QMainWindow):
             self.checkbox_add_item_income.stateChanged.connect(self.changed_state_date_edit_income)
             self.checkbox_add_item_costs.stateChanged.connect(self.changed_state_date_edit_costs)
 
+            self.get_data_records()
+
 
         except FileNotFoundError:
             QMessageBox.warning(
@@ -116,9 +118,13 @@ class Window(QMainWindow):
         self.data_incomes = self.get_data_incomes()
         self.data_costs = self.get_data_costs()
 
+        self.data_records = self.get_data_records()
+
         # Вывод статей в таблицы
         self.write_in_table(self.data_incomes, self.table_incomes)
         self.write_in_table(self.data_costs, self.table_costs)
+
+        self.write_in_table_records(self.data_records, self.table_records_incomes)
 
         # Заполнение выпадающих списков статей
         self.write_in_combobox(self.data_incomes, self.combobox_incomes)
@@ -234,6 +240,15 @@ class Window(QMainWindow):
             QMessageBox.warning(
                 self, 'Error', '#5 Error db: {}'.format(err))
 
+    def get_data_records(self):
+        try:
+            self.cur_db.execute('SELECT * FROM financial_records')
+            return self.cur_db.fetchall()
+            # print(self.cur_db.fetchall())
+        except sqlite3.DatabaseError as err:
+            QMessageBox.warning(
+                self, 'Error', '#6 Error db: {}'.format(err))
+
 
     # Функция вывода записей в таблице статей доходов/расходов
     def write_in_table(self, data, table):
@@ -247,6 +262,17 @@ class Window(QMainWindow):
                 table.setItem(inx, 1, QTableWidgetItem("Бессрочно"))
             else:
                 table.setItem(inx, 1, QTableWidgetItem(str(self.convert_date(row[2]))))
+
+    def write_in_table_records(self, data, table):
+        table.clearContents()
+        table.setRowCount(0)
+        for row in data:
+            inx = data.index(row)
+            table.insertRow(inx)
+            table.setItem(inx, 0, QTableWidgetItem(str(row[1])))
+            table.setItem(inx, 1, QTableWidgetItem(str(row[4])))
+            table.setItem(inx, 2, QTableWidgetItem(str(row[3])))
+
 
     # Функция вывода записей в комбобоксы
     def write_in_combobox(self, data, combobox):
