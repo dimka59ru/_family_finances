@@ -1,8 +1,10 @@
 # from PyQt4 import QtGui
+from PyQt5 import QtGui
+
 from PyQt5.QtCore import QDateTime, QDate
 from PyQt5.QtGui import QIcon, QPixmap, QPalette, QColor
 from PyQt5.QtWidgets import QDialog, QLineEdit, QPushButton, QVBoxLayout, QMessageBox, QMainWindow, QApplication, \
-    QLabel, QWidget, QAction, qApp, QAbstractItemView, QTableWidgetItem
+    QLabel, QWidget, QAction, qApp, QAbstractItemView, QTableWidgetItem, QHeaderView, QTableWidget
 # from mainwindow import Ui_MainWindow
 from PyQt5.uic import loadUi
 import sqlite3
@@ -78,12 +80,12 @@ class Window(QMainWindow):
             # Инициализация таблиц
             self.column_name_income = ["Статья доходов", "Действительна до"]
             self.column_name_costs = ["Статья расходов", "Действительна до"]
-            self.column_name_table_records_incomes = ["Дата занесения", "Статья дохода", "Сумма"]
-            self.column_name_table_records_costs = ["Дата занесения", "Статья расхода", "Сумма"]
+            self.column_name_table_records_incomes = ["Дата занесения", "Статья", "Сумма"]
+            # self.column_name_table_records_costs = ["Дата занесения", "Статья расхода", "Сумма"]
             self.init_table(self.table_incomes, self.column_name_income)
             self.init_table(self.table_costs, self.column_name_costs)
             self.init_table(self.table_records_incomes, self.column_name_table_records_incomes)
-            self.init_table(self.table_records_costs, self.column_name_table_records_costs)
+            # self.init_table(self.table_records_costs, self.column_name_table_records_costs)
 
             # Получение данных из БД
             self.update_data_in_ui()
@@ -217,12 +219,17 @@ class Window(QMainWindow):
     # Функция инициализации таблиц
     def init_table(self, table, column_name):
         table.horizontalHeader().setStretchLastSection(True)
+        # table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+
         table.setColumnCount(len(column_name))  # Устанавливаем количество столбцов
         table.setHorizontalHeaderLabels(column_name)  # Именуем столбцы таблицы
         table.verticalHeader().setDefaultSectionSize(22)  # Устанавливаем высоту строк
         table.setSelectionBehavior(QAbstractItemView.SelectRows)  # Выделяем только строки
         table.setSelectionMode(QAbstractItemView.SingleSelection)  # Выделяем только одну строку
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # Запрет редактирования таблицы
+
+        # table.setAlternatingRowColors(True)
+        # table.setStyleSheet("alternate-background-color: yellow; background-color: red;");
 
     def get_data_incomes(self):
         try:
@@ -242,7 +249,7 @@ class Window(QMainWindow):
 
     def get_data_records(self):
         try:
-            self.cur_db.execute('SELECT * FROM financial_records')
+            self.cur_db.execute('SELECT * FROM financial_records WHERE del=0')
             return self.cur_db.fetchall()
             # print(self.cur_db.fetchall())
         except sqlite3.DatabaseError as err:
@@ -262,6 +269,7 @@ class Window(QMainWindow):
                 table.setItem(inx, 1, QTableWidgetItem("Бессрочно"))
             else:
                 table.setItem(inx, 1, QTableWidgetItem(str(self.convert_date(row[2]))))
+        table.resizeColumnsToContents()
 
     def write_in_table_records(self, data, table):
         table.clearContents()
@@ -269,11 +277,35 @@ class Window(QMainWindow):
         for row in data:
             inx = data.index(row)
             table.insertRow(inx)
-            table.setItem(inx, 0, QTableWidgetItem(str(row[1])))
-            table.setItem(inx, 1, QTableWidgetItem(str(row[4])))
+            table.setItem(inx, 0, QTableWidgetItem(str(self.convert_date(row[1]))))
             table.setItem(inx, 2, QTableWidgetItem(str(row[3])))
 
+            if row[2] == "plus":
+                for row2 in self.data_incomes:
+                    if row[4] == row2[0]:
+                        table.setItem(inx, 1, QTableWidgetItem(str(row2[1])))
+                # table.item(inx, 1).setBackground(QtGui.QColor("red"))
+                self.set_color(table, "#e5fbe5", inx)
+            elif row[2] == "minus":
+                for row2 in self.data_costs:
+                    if row[4] == row2[0]:
+                        table.setItem(inx, 1, QTableWidgetItem(str(row2[1])))
+                self.set_color(table, "#ffd8d8", inx)
 
+        table.resizeColumnsToContents()
+
+            # # table.setColumnWidth(1, QHeaderView.ResizeToContents)
+            # table2 = QTableWidget
+            # table2.resizeColumnsToContents()
+
+
+
+    def set_color(self, table, color, inx):
+        for i, c in enumerate(self.column_name_table_records_incomes):
+            table.item(inx, i).setBackground(QtGui.QColor(color))
+
+
+        # table.item(inx, 1).setBackground(QtGui.QColor(100, 100, 150))
     # Функция вывода записей в комбобоксы
     def write_in_combobox(self, data, combobox):
         combobox.clear()
