@@ -1,10 +1,10 @@
 # from PyQt4 import QtGui
 from PyQt5 import QtGui
 
-from PyQt5.QtCore import QDateTime, QDate
+from PyQt5.QtCore import QDateTime, QDate, Qt
 from PyQt5.QtGui import QIcon, QPixmap, QPalette, QColor, QDoubleValidator
 from PyQt5.QtWidgets import QDialog, QLineEdit, QPushButton, QVBoxLayout, QMessageBox, QMainWindow, QApplication, \
-    QLabel, QWidget, QAction, qApp, QAbstractItemView, QTableWidgetItem, QHeaderView, QTableWidget
+    QLabel, QWidget, QAction, qApp, QAbstractItemView, QTableWidgetItem, QHeaderView, QTableWidget, QMenu
 # from mainwindow import Ui_MainWindow
 from PyQt5.uic import loadUi
 import sqlite3
@@ -113,6 +113,9 @@ class Window(QMainWindow):
             self.line_sum_incomes.setValidator(validator)
             self.line_sum_costs.setValidator(validator)
 
+            # self.setContextMenuPolicy(Qt.ActionsContextMenu)
+            self.table_records.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.table_records.customContextMenuRequested.connect(self.open_menu)
 
 
         except FileNotFoundError:
@@ -120,6 +123,45 @@ class Window(QMainWindow):
                 self, 'Error', ' File form.ui not found!')
             # self.ui = Ui_MainWindow()
             # self.ui.setupUi(self)
+
+    def open_menu(self, position):
+        # print("open menu")
+        indexes = self.table_records.selectionModel().selectedRows()
+        row = indexes[0].row()
+        # print(row)
+        menu = QMenu(self)
+        quitAction = menu.addAction("Delete")
+        action = menu.exec_(self.table_records.viewport().mapToGlobal(position))
+
+        if action == quitAction:
+            date_time = self.table_records.item(row, 0).text()
+            unixtime = self.utc_datetime_to_unix_time(datetime.datetime.strptime(date_time, '%Y-%m-%d %H:%M:%S'))
+            item = self.table_records.item(row, 1).text()
+            summ = self.table_records.item(row, 2).text()
+
+            flag = True
+            for row in self.data_incomes:
+                if item == row[1]:
+                    flag = False
+
+            try:
+                if flag:
+                    self.cur_db.execute(
+                        "UPDATE costs_records SET del=? WHERE datetime=? AND sum=?", (
+                            1, unixtime, summ
+                        ))
+                else:
+                    self.cur_db.execute(
+                        "UPDATE income_records SET del=? WHERE datetime=? AND sum=?", (
+                            1, unixtime, summ
+                        ))
+            except sqlite3.DatabaseError as err:
+                QMessageBox.warning(
+                    self, 'Error', '#9 Error db: {}'.format(err))
+            else:
+                self.conn.commit()
+                self.update_data_in_ui()
+
 
     def update_data_in_ui(self):
         # Получим список статей дохода
@@ -160,7 +202,7 @@ class Window(QMainWindow):
         text = " ".join(text.split())  # Удалим лишние пробелы
 
         if self.checkbox_add_item_income.isChecked():
-            date = self.get_unix_time(self.date_edit_add_item_income.date().toPyDate())
+            date = self.utc_date_to_unix_time(self.date_edit_add_item_income.date().toPyDate())
         else:
             date = 0
 
@@ -182,7 +224,7 @@ class Window(QMainWindow):
         text = " ".join(text.split())  # Удалим лишние пробелы
 
         if self.checkbox_add_item_costs.isChecked():
-            date = self.get_unix_time(self.date_edit_add_item_costs.date().toPyDate())
+            date = self.utc_date_to_unix_time(self.date_edit_add_item_costs.date().toPyDate())
         else:
             date = 0
 
@@ -199,13 +241,39 @@ class Window(QMainWindow):
         self.line_edit_add_item_costs.clear()
 
     def press_button_add_income(self):
-        print("press_button_add_income")
-        print(self.combobox_incomes.currentText())
-        print(self.line_sum_incomes.text())
+        # print("press_button_add_income")
+        # print(self.combobox_incomes.currentText())
+        # print(self.line_sum_incomes.text())
+
+        if not self.line_sum_incomes.text():
+            QMessageBox.warning(
+                self, 'Error', 'Не заполнена сумма дохода!')
+        else:
+            datetime_now = self.utc_datetime_to_unix_time(datetime.datetime.now())
+            for row in self.data_incomes:
+                if row[1] == self.combobox_incomes.currentText():
+                    id_item = row[0]
+                    self.add_incomes(datetime_now, self.line_sum_incomes.text(), id_item)
+
+        self.update_data_in_ui()
+        self.line_sum_incomes.clear()
 
     def press_button_add_cost(self):
         print("press_button_add_cost")
         print(self.combobox_costs.currentText())
+
+        if not self.line_sum_costs.text():
+            QMessageBox.warning(
+                self, 'Error', 'Не заполнена сумма расхода!')
+        else:
+            datetime_now = self.utc_datetime_to_unix_time(datetime.datetime.now())
+            for row in self.data_costs:
+                if row[1] == self.combobox_costs.currentText():
+                    id_item = row[0]
+                    self.add_costs(datetime_now, self.line_sum_costs.text(), id_item)
+
+        self.update_data_in_ui()
+        self.line_sum_costs.clear()
 
     # Функция добавления статьи доходов в БД
     def add_item_income(self, name, expiration_date):
@@ -229,6 +297,30 @@ class Window(QMainWindow):
         else:
             self.conn.commit()
 
+    # Функция добавления доходов
+    def add_incomes(self, datetime_now, summ, id_item):
+        try:
+            self.cur_db.execute(
+                "INSERT INTO income_records (datetime, sum, id_item) VALUES (?, ?, ?)",
+                (datetime_now, summ, id_item))
+        except sqlite3.DatabaseError as err:
+            QMessageBox.warning(
+                self, 'Error', '#7 Error db: {}'.format(err))
+        else:
+            self.conn.commit()
+
+    # Функция добавления доходов
+    def add_costs(self, datetime_now, summ, id_item):
+        try:
+            self.cur_db.execute(
+                "INSERT INTO costs_records (datetime, sum, id_item) VALUES (?, ?, ?)",
+                (datetime_now, summ, id_item))
+        except sqlite3.DatabaseError as err:
+            QMessageBox.warning(
+                self, 'Error', '#8 Error db: {}'.format(err))
+        else:
+            self.conn.commit()
+
     # Функция инициализации таблиц
     def init_table(self, table, column_name):
         table.horizontalHeader().setStretchLastSection(True)
@@ -240,6 +332,7 @@ class Window(QMainWindow):
         table.setSelectionBehavior(QAbstractItemView.SelectRows)  # Выделяем только строки
         table.setSelectionMode(QAbstractItemView.SingleSelection)  # Выделяем только одну строку
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # Запрет редактирования таблицы
+
 
         # table.setAlternatingRowColors(True)
         # table.setStyleSheet("alternate-background-color: yellow; background-color: red;");
@@ -286,7 +379,7 @@ class Window(QMainWindow):
             if row[2] == 0:
                 table.setItem(inx, 1, QTableWidgetItem("Бессрочно"))
             else:
-                table.setItem(inx, 1, QTableWidgetItem(str(self.convert_date(row[2]))))
+                table.setItem(inx, 1, QTableWidgetItem(str(self.unix_time_to_datetime_utc(row[2]))))
 
         table.resizeColumnsToContents()
         table.horizontalHeader().setStretchLastSection(True)
@@ -318,11 +411,11 @@ class Window(QMainWindow):
         for inx, row in enumerate(all):
 
             table.insertRow(inx)
-            table.setItem(inx, 0, QTableWidgetItem(str(self.convert_date(row[1][1]))))
+            table.setItem(inx, 0, QTableWidgetItem(str(self.unix_time_to_datetime_utc(row[1][1]))))
 
             table.setItem(inx, 2, QTableWidgetItem(str(row[1][2])))
 
-            table.setItem(inx, 1, QTableWidgetItem(str(row[0])))
+            # table.setItem(inx, 1, QTableWidgetItem(str(row[0])))
 
             if row[0] == 1:
                 for row2 in self.data_incomes:
@@ -388,14 +481,24 @@ class Window(QMainWindow):
     # Функция вывода записей в комбобоксы
     def write_in_combobox(self, data, combobox):
         combobox.clear()
-        for row in data:
-            combobox.addItem(str(row[1]))
 
-    def convert_date(self, unixtime):
+        datetime_now = self.utc_datetime_to_unix_time(datetime.datetime.now())
+
+
+        for row in data:
+            if (datetime_now < row[2]) or (row[2] == 0):
+                # print(row)
+                # print(datetime_now)
+                combobox.addItem(str(row[1]))
+
+    def unix_time_to_datetime_utc(self, unixtime):
         return datetime.datetime.fromtimestamp(unixtime).strftime('%Y-%m-%d %H:%M:%S')
 
-    def get_unix_time(self, date):
+    def utc_date_to_unix_time(self, date):
         return int(time.mktime(date.timetuple()))
+
+    def utc_datetime_to_unix_time(self, datetime):
+        return int(time.mktime(datetime.timetuple()))
 
     def about(self):
         QMessageBox.about(self, "О программе",
