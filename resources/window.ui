@@ -28,7 +28,7 @@
         <item>
          <layout class="QVBoxLayout" name="verticalLayout_3">
           <item>
-           <widget class="QTableWidget" name="table_records_incomes"/>
+           <widget class="QTableWidget" name="table_records"/>
           </item>
           <item>
            <widget class="QGroupBox" name="groupBox">
@@ -115,7 +115,11 @@
                   <widget class="QComboBox" name="combobox_incomes"/>
                  </item>
                  <item>
-                  <widget class="QLineEdit" name="lineEdit"/>
+                  <widget class="QLineEdit" name="line_sum_incomes">
+                   <property name="inputMethodHints">
+                    <set>Qt::ImhNone</set>
+                   </property>
+                  </widget>
                  </item>
                 </layout>
                </item>
@@ -137,7 +141,7 @@
                 </spacer>
                </item>
                <item>
-                <widget class="QPushButton" name="pushButton">
+                <widget class="QPushButton" name="button_add_income">
                  <property name="sizePolicy">
                   <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
                    <horstretch>0</horstretch>
@@ -235,7 +239,11 @@
                   <widget class="QComboBox" name="combobox_costs"/>
                  </item>
                  <item>
-                  <widget class="QLineEdit" name="lineEdit_2"/>
+                  <widget class="QLineEdit" name="line_sum_costs">
+                   <property name="inputMethodHints">
+                    <set>Qt::ImhNone</set>
+                   </property>
+                  </widget>
                  </item>
                 </layout>
                </item>
@@ -257,7 +265,7 @@
                 </spacer>
                </item>
                <item>
-                <widget class="QPushButton" name="pushButton_2">
+                <widget class="QPushButton" name="button_add_cost">
                  <property name="sizePolicy">
                   <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
                    <horstretch>0</horstretch>
