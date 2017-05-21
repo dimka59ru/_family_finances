@@ -1,22 +1,75 @@
-# from PyQt4 import QtGui
-from PyQt5 import QtGui
+import hashlib
+import os
 
-from PyQt5.QtCore import QDateTime, QDate, Qt
-from PyQt5.QtGui import QIcon, QPixmap, QPalette, QColor, QDoubleValidator
-from PyQt5.QtWidgets import QDialog, QLineEdit, QPushButton, QVBoxLayout, QMessageBox, QMainWindow, QApplication, \
-    QLabel, QWidget, QAction, qApp, QAbstractItemView, QTableWidgetItem, QHeaderView, QTableWidget, QMenu
-# from mainwindow import Ui_MainWindow
+from PyQt5 import QtGui
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (QDialog, QLineEdit, QPushButton, QVBoxLayout, QMessageBox, QMainWindow, QApplication,
+                             QLabel, qApp, QAbstractItemView, QTableWidgetItem, QMenu, QFileDialog)
+
 from PyQt5.uic import loadUi
 import sqlite3
 import datetime
 import time
+import xlsxwriter
+
+
+class CreateUser(QDialog):
+    def __init__(self, db_file, parent=None):
+        super(CreateUser, self).__init__(parent)
+        self.setWindowTitle('Create User')
+        self.setWindowIcon(QtGui.QIcon('resources/Accounting.png'))
+
+        self.text_name = QLineEdit(self)
+        self.text_pass = QLineEdit(self)
+
+        self.label_name = QLabel(self)
+        self.label_pass = QLabel(self)
+        self.label_name.setText('login:')
+        self.label_pass.setText('pass:')
+
+        self.button_login = QPushButton('Create', self)
+
+        self.button_login.clicked.connect(self.create_user)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.label_name)
+        layout.addWidget(self.text_name)
+        layout.addWidget(self.label_pass)
+        layout.addWidget(self.text_pass)
+        layout.addWidget(self.button_login)
+
+        # Подключение к базе SQLite
+        try:
+            self.conn = sqlite3.connect(db_file)
+            self.cur_db = self.conn.cursor()
+        except sqlite3.DatabaseError as err:
+            print(err)
+
+    def create_user(self):
+        try:
+            self.cur_db.execute(
+                "INSERT INTO users (name, pass) VALUES (?, ?)", (
+                    self.text_name.text(), self.computeMD5hash(self.text_pass.text())))
+        except sqlite3.DatabaseError as err:
+            print(err)
+        else:
+            self.conn.commit()
+
+        self.cur_db.close()
+        self.conn.close()
+        self.accept()
+
+    def computeMD5hash(self, string):
+        m = hashlib.md5()
+        m.update(string.encode('utf-8'))
+        return m.hexdigest()
 
 
 class Login(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, db_file, parent=None):
         super(Login, self).__init__(parent)
         self.setWindowTitle('Login')
-        self.setWindowIcon(QIcon('resources/Accounting.png'))
+        self.setWindowIcon(QtGui.QIcon('resources/Accounting.png'))
 
         self.text_name = QLineEdit(self)
         self.text_pass = QLineEdit(self)
@@ -37,14 +90,38 @@ class Login(QDialog):
         layout.addWidget(self.text_pass)
         layout.addWidget(self.button_login)
 
+        # Подключение к базе SQLite
+        try:
+            self.conn = sqlite3.connect(db_file)
+            self.cur_db = self.conn.cursor()
+        except sqlite3.DatabaseError as err:
+            print(err)
+
+        self.login, self.password = self.get_user()
+
     ## Проверка логина и пароля
     def handle_login(self):
-        if (self.text_name.text() == 'foo' and
-                    self.text_pass.text() == 'bar'):
+        if (self.text_name.text() == self.login and
+                    self.computeMD5hash(self.text_pass.text()) == self.password):
+
+            self.cur_db.close()
+            self.conn.close()
             self.accept()
         else:
             QMessageBox.warning(
                 self, 'Error', 'Bad user or password')
+
+    def get_user(self):
+        try:
+            self.cur_db.execute('SELECT * FROM users')
+            return self.cur_db.fetchone()
+        except sqlite3.DatabaseError as err:
+            print(err)
+
+    def computeMD5hash(self, string):
+        m = hashlib.md5()
+        m.update(string.encode('utf-8'))
+        return m.hexdigest()
 
 
 class Window(QMainWindow):
@@ -53,17 +130,30 @@ class Window(QMainWindow):
 
         try:
             loadUi("resources/window.ui", self)
-            self.setWindowIcon(QIcon('resources/Accounting.png'))
+            self.setWindowIcon(QtGui.QIcon('resources/Accounting.png'))
             # self.showMaximized()
             self.show()
 
-            self.about_action.setIcon(QIcon('resources/Help.png'))
+            self.about_action.setIcon(QtGui.QIcon('resources/Help.png'))
             self.about_action.triggered.connect(self.about)
 
-            self.quit_action.setIcon(QIcon('resources/Exit.png'))
+            self.quit_action.setIcon(QtGui.QIcon('resources/Exit.png'))
             # self.quit_action.setIcon(QIcon(qApp.style().standardIcon(QStyle.SP_DialogCancelButton)))
             self.quit_action.setShortcut('Ctrl+Q')
             self.quit_action.triggered.connect(qApp.quit)
+
+            self.save_action.setIcon(QtGui.QIcon('resources/Save.png'))
+            self.save_action.setShortcut('Ctrl+S')
+            self.save_action.triggered.connect(self.save_report)
+
+            # Фильтр для вывода записей по умолчанию
+            self.filter_date = [self.utc_date_to_unix_time(datetime.date.today() + datetime.timedelta(1)),
+                                self.utc_date_to_unix_time(datetime.date.today() - datetime.timedelta(30))]
+
+            self.date_edit_start.setDate(datetime.date.today() - datetime.timedelta(30))
+            self.date_edit_end.setDate(datetime.date.today())
+
+            self.button_filter.clicked.connect(self.press_button_filter)
 
             # Подключение к базе SQLite
             try:
@@ -74,6 +164,7 @@ class Window(QMainWindow):
 
             # Создание курсора
             self.cur_db = self.conn.cursor()
+            # self.init_db()
 
             # Инициализация таблиц
             self.column_name_income = ["Статья доходов", "Действительна до"]
@@ -106,10 +197,10 @@ class Window(QMainWindow):
             self.checkbox_add_item_income.stateChanged.connect(self.changed_state_date_edit_income)
             self.checkbox_add_item_costs.stateChanged.connect(self.changed_state_date_edit_costs)
 
-            self.get_data_records()
+            # self.get_data_records()
 
-            validator = QDoubleValidator(0.00, 999999.99, 2)
-            validator.setNotation(QDoubleValidator.StandardNotation)
+            validator = QtGui.QDoubleValidator(0.00, 999999.99, 2)
+            validator.setNotation(QtGui.QDoubleValidator.StandardNotation)
             self.line_sum_incomes.setValidator(validator)
             self.line_sum_costs.setValidator(validator)
 
@@ -124,13 +215,68 @@ class Window(QMainWindow):
             # self.ui = Ui_MainWindow()
             # self.ui.setupUi(self)
 
+    def save_report(self):
+
+        try:
+            options = QFileDialog.DontResolveSymlinks | QFileDialog.ShowDirsOnly
+            directory = QFileDialog.getExistingDirectory(self, "", "", options=options)
+
+            all = self.sum_all_data()
+
+            if directory:
+
+                workbook = xlsxwriter.Workbook('{}/report_{}.xlsx'.format(
+                    directory, datetime.datetime.now().strftime("%Y%m%d_%H%M%S")))
+                worksheet = workbook.add_worksheet()
+                bold = workbook.add_format({'bold': True, 'bg_color': '#CCCCCC', 'border': 1})
+                red = workbook.add_format({'bg_color': '#FFC7CE', 'border': 1})
+                green = workbook.add_format({'bg_color': '#e5fbe5', 'border': 1})
+
+                worksheet.write(0, 1, "Сводный отчет за период")
+
+                worksheet.set_column('B:E', 25)
+
+                worksheet.write('B2', self.column_name_table_records[0], bold)
+                worksheet.write('C2', self.column_name_table_records[1], bold)
+                worksheet.write('D2', self.column_name_table_records[2], bold)
+
+                i = 2
+                for row in all:
+                    bgcolor = green if row[0] == 1 else red
+
+                    if row[0] == 1:
+                        for row2 in self.data_incomes:
+                            if row[1][3] == row2[0]:
+                                worksheet.write(i, 2, row2[1], bgcolor)  # Статья
+
+                    elif row[0] == 2:
+                        for row2 in self.data_costs:
+                            if row[1][3] == row2[0]:
+                                worksheet.write(i, 2, row2[1], bgcolor)  # Статья
+
+                    worksheet.write(i, 1, self.unix_time_to_datetime_utc(row[1][1]), bgcolor)  # Дата
+
+                    worksheet.write_number(i, 3, float(str(row[1][2]).replace(",", ".")), bgcolor)  # Сумма
+                    i += 1
+
+                workbook.close()
+
+
+        except Exception as err:
+            QMessageBox.warning(
+                self, 'Error', ' Error save: {}'.format(err))
+
+    def press_button_filter(self):
+        date_start = self.utc_date_to_unix_time(self.date_edit_start.date().toPyDate())
+        date_end = self.utc_date_to_unix_time(self.date_edit_end.date().toPyDate() + datetime.timedelta(1))
+        self.filter_date = [date_end, date_start]
+        self.update_data_in_ui()
+
     def open_menu(self, position):
-        # print("open menu")
         indexes = self.table_records.selectionModel().selectedRows()
         row = indexes[0].row()
-        # print(row)
         menu = QMenu(self)
-        quitAction = menu.addAction("Delete")
+        quitAction = menu.addAction("Удалить")
         action = menu.exec_(self.table_records.viewport().mapToGlobal(position))
 
         if action == quitAction:
@@ -162,19 +308,19 @@ class Window(QMainWindow):
                 self.conn.commit()
                 self.update_data_in_ui()
 
-
     def update_data_in_ui(self):
         # Получим список статей дохода
         self.data_incomes = self.get_data_incomes()
         self.data_costs = self.get_data_costs()
+        # self.all_data = self.sum_all_data(self.data_incomes, self.data_costs)
 
-        self.income_records, self.costs_records = self.get_data_records()
+        self.income_records, self.costs_records = self.get_data_records(self.filter_date)
 
         # Вывод статей в таблицы
         self.write_in_table(self.data_incomes, self.table_incomes)
         self.write_in_table(self.data_costs, self.table_costs)
 
-        self.write_in_table_records(self.income_records, self.costs_records, self.table_records)
+        self.write_in_table_records(self.table_records)
 
         # Заполнение выпадающих списков статей
         self.write_in_combobox(self.data_incomes, self.combobox_incomes)
@@ -241,9 +387,6 @@ class Window(QMainWindow):
         self.line_edit_add_item_costs.clear()
 
     def press_button_add_income(self):
-        # print("press_button_add_income")
-        # print(self.combobox_incomes.currentText())
-        # print(self.line_sum_incomes.text())
 
         if not self.line_sum_incomes.text():
             QMessageBox.warning(
@@ -259,8 +402,6 @@ class Window(QMainWindow):
         self.line_sum_incomes.clear()
 
     def press_button_add_cost(self):
-        print("press_button_add_cost")
-        print(self.combobox_costs.currentText())
 
         if not self.line_sum_costs.text():
             QMessageBox.warning(
@@ -309,7 +450,7 @@ class Window(QMainWindow):
         else:
             self.conn.commit()
 
-    # Функция добавления доходов
+    # Функция добавления расходов
     def add_costs(self, datetime_now, summ, id_item):
         try:
             self.cur_db.execute(
@@ -353,12 +494,14 @@ class Window(QMainWindow):
             QMessageBox.warning(
                 self, 'Error', '#5 Error db: {}'.format(err))
 
-    def get_data_records(self):
+    def get_data_records(self, filter_date):
         try:
-            self.cur_db.execute('SELECT * FROM income_records WHERE del=0')
+            self.cur_db.execute('SELECT * FROM income_records WHERE del=0 and datetime <= ? and datetime >= ?',
+                                (filter_date[0], filter_date[1]))
             income_records = self.cur_db.fetchall()
 
-            self.cur_db.execute('SELECT * FROM costs_records WHERE del=0')
+            self.cur_db.execute('SELECT * FROM costs_records WHERE del=0 and datetime <= ? and datetime >= ?',
+                                (filter_date[0], filter_date[1]))
             costs_records = self.cur_db.fetchall()
 
             return income_records, costs_records
@@ -384,22 +527,15 @@ class Window(QMainWindow):
         table.resizeColumnsToContents()
         table.horizontalHeader().setStretchLastSection(True)
 
-    def write_in_table_records(self, income_records, costs_records, table):
-        table.clearContents()
-        table.setRowCount(0)
-
-        # print("!")
-        # zipped = zip(income_records, costs_records)
-        # print(list(zipped))
+    def sum_all_data(self):
         all = []
-        for row in income_records:
+        for row in self.income_records:
             temp = []
             temp.append(1)
             temp.append(row)
-
             all.append(temp)
-        # print(all)
-        for row in costs_records:
+
+        for row in self.costs_records:
             temp = []
             temp.append(2)
             temp.append(row)
@@ -407,13 +543,19 @@ class Window(QMainWindow):
 
         all.sort(key=self.sort_by_date, reverse=True)
 
+        return all
+
+    def write_in_table_records(self, table):
+        table.clearContents()
+        table.setRowCount(0)
+        all = self.sum_all_data()
 
         for inx, row in enumerate(all):
-
             table.insertRow(inx)
             table.setItem(inx, 0, QTableWidgetItem(str(self.unix_time_to_datetime_utc(row[1][1]))))
 
             table.setItem(inx, 2, QTableWidgetItem(str(row[1][2])))
+            table.setItem(inx, 1, QTableWidgetItem("Статья отсутствует"))
 
             # table.setItem(inx, 1, QTableWidgetItem(str(row[0])))
 
@@ -421,48 +563,14 @@ class Window(QMainWindow):
                 for row2 in self.data_incomes:
                     if row[1][3] == row2[0]:
                         table.setItem(inx, 1, QTableWidgetItem(str(row2[1])))
+                        self.set_color(table, "#e5fbe5", inx)
 
-                self.set_color(table, "#e5fbe5", inx)
+
             elif row[0] == 2:
                 for row2 in self.data_costs:
                     if row[1][3] == row2[0]:
                         table.setItem(inx, 1, QTableWidgetItem(str(row2[1])))
-
-                self.set_color(table, "#ffd8d8", inx)
-
-                # for item in row[1]:
-                #
-                #     print(item)
-                # table.setItem(inx, 0, QTableWidgetItem(str(self.convert_date(item[1]))))
-
-                # for lst in (income_records, costs_records):
-                #
-                #
-                #     for row in lst:
-                #         print(row)
-                # inx = lst.index(row)
-                # table.insertRow(inx)
-                # table.setItem(inx, 0, QTableWidgetItem(str(self.convert_date(row[1]))))
-                # table.setItem(inx, 1, QTableWidgetItem(str(row[3])))
-                # table.setItem(inx, 2, QTableWidgetItem(str(row[2])))
-
-        # for row in data:
-        #     inx = data.index(row)
-        #     table.insertRow(inx)
-        #     table.setItem(inx, 0, QTableWidgetItem(str(self.convert_date(row[1]))))
-        #     table.setItem(inx, 2, QTableWidgetItem(str(row[3])))
-        #
-        #     if row[2] == "plus":
-        #         for row2 in self.data_incomes:
-        #             if row[4] == row2[0]:
-        #                 table.setItem(inx, 1, QTableWidgetItem(str(row2[1])))
-        #         # table.item(inx, 1).setBackground(QtGui.QColor("red"))
-        #         self.set_color(table, "#e5fbe5", inx)
-        #     elif row[2] == "minus":
-        #         for row2 in self.data_costs:
-        #             if row[4] == row2[0]:
-        #                 table.setItem(inx, 1, QTableWidgetItem(str(row2[1])))
-        #         self.set_color(table, "#ffd8d8", inx)
+                        self.set_color(table, "#ffd8d8", inx)
 
         table.resizeColumnsToContents()
         table.horizontalHeader().setStretchLastSection(True)
@@ -475,20 +583,15 @@ class Window(QMainWindow):
         for i, c in enumerate(self.column_name_table_records):
             table.item(inx, i).setBackground(QtGui.QColor(color))
 
+            # Функция вывода записей в комбобоксы
 
-            # table.item(inx, 1).setBackground(QtGui.QColor(100, 100, 150))
-
-    # Функция вывода записей в комбобоксы
     def write_in_combobox(self, data, combobox):
         combobox.clear()
 
         datetime_now = self.utc_datetime_to_unix_time(datetime.datetime.now())
 
-
         for row in data:
             if (datetime_now < row[2]) or (row[2] == 0):
-                # print(row)
-                # print(datetime_now)
                 combobox.addItem(str(row[1]))
 
     def unix_time_to_datetime_utc(self, unixtime):
@@ -506,6 +609,66 @@ class Window(QMainWindow):
                           "<br/>Суворов Дмитрий<br/>"
                           "dimka59ru@gmail.com")
 
+    # Функция, вызываемая при закрытии окна
+    def closeEvent(self, event):
+        # закрываем соединение с базой
+        self.cur_db.close()
+        self.conn.close()
+        event.accept()
+
+
+
+def init_db(cur_db):
+    sql_create_costs_table = """ CREATE TABLE IF NOT EXISTS `costs` (
+                                    `id`	INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    `name`	TEXT NOT NULL UNIQUE,
+                                    `expiration_date`	INTEGER,
+                                    `visible`	INTEGER NOT NULL DEFAULT 1
+                                );"""
+
+    sql_create_incomes_table = """ CREATE TABLE IF NOT EXISTS `incomes` (
+                                            `id`	INTEGER,
+                                            `name`	TEXT NOT NULL UNIQUE,
+                                            `expiration_date`	INTEGER,
+                                            `visible`	INTEGER NOT NULL DEFAULT 1,
+                                            PRIMARY KEY(`id`)
+                                        );"""
+
+    sql_create_costs_records_table = """ CREATE TABLE IF NOT EXISTS `costs_records` (
+                                            `id`	INTEGER,
+                                            `datetime`	INTEGER NOT NULL,
+                                            `sum`	INTEGER NOT NULL,
+                                            `id_item`	INTEGER NOT NULL,
+                                            `del`	INTEGER NOT NULL DEFAULT 0,
+                                            PRIMARY KEY(`id`),
+                                            FOREIGN KEY(`id_item`) REFERENCES `costs`(`id`)
+                                        );"""
+
+    sql_create_income_records_table = """ CREATE TABLE IF NOT EXISTS `income_records` (
+                                            `id`	INTEGER PRIMARY KEY AUTOINCREMENT,
+                                            `datetime`	INTEGER NOT NULL,
+                                            `sum`	INTEGER NOT NULL,
+                                            `id_item`	INTEGER NOT NULL,
+                                            `del`	INTEGER NOT NULL DEFAULT 0,
+                                            FOREIGN KEY(`id_item`) REFERENCES `incomes`(`id`)
+                                        );"""
+
+    sql_create_users_table = """ CREATE TABLE IF NOT EXISTS `users` (                                                        
+                                                    `name`	TEXT NOT NULL,
+                                                    `pass`	TEXT NOT NULL                                                        
+                                                );"""
+
+
+    try:
+        cur_db.execute(sql_create_costs_table)
+        cur_db.execute(sql_create_incomes_table)
+        cur_db.execute(sql_create_costs_records_table)
+        cur_db.execute(sql_create_income_records_table)
+        cur_db.execute(sql_create_users_table)
+
+    except Exception as err:
+        print(err)
+
 
 if __name__ == '__main__':
 
@@ -513,11 +676,30 @@ if __name__ == '__main__':
 
     app = QApplication(sys.argv)
     app.setStyle("fusion")
-    p = QPalette
+    p = QtGui.QPalette
     p = qApp.palette()
-    p.setColor(QPalette.Highlight, QColor(77, 98, 120))
+    p.setColor(QtGui.QPalette.Highlight, QtGui.QColor(77, 98, 120))
     qApp.setPalette(p)
-    login = Login()
+
+    db_file = "family_finances.db"
+    # Подключение к базе SQLite
+    try:
+        conn = sqlite3.connect(db_file)
+        cur_db = conn.cursor()
+        init_db(cur_db)
+        cur_db.execute('SELECT * FROM users')
+        result = cur_db.fetchone()
+
+        if not result:
+            create_user = CreateUser(db_file)
+            if create_user.exec_() == QDialog.Accepted:
+                login = Login(db_file)
+        else:
+            login = Login(db_file)
+
+    except sqlite3.DatabaseError as err:
+        print(err)
+
 
     if login.exec_() == QDialog.Accepted:
         window = Window()
