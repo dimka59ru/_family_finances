@@ -125,7 +125,7 @@ class Login(QDialog):
 
 
 class Window(QMainWindow):
-    def __init__(self, parent=None):
+    def __init__(self, db_file, parent=None):
         super(Window, self).__init__(parent)
 
         try:
@@ -156,8 +156,9 @@ class Window(QMainWindow):
             self.button_filter.clicked.connect(self.press_button_filter)
 
             # Подключение к базе SQLite
+            self.db_file = db_file
             try:
-                self.conn = sqlite3.connect('family_finances.db')
+                self.conn = sqlite3.connect(self.db_file)
             except sqlite3.DatabaseError as err:
                 QMessageBox.warning(
                     self, 'Error', '#1 Error db: {}'.format(err))
@@ -274,39 +275,41 @@ class Window(QMainWindow):
 
     def open_menu(self, position):
         indexes = self.table_records.selectionModel().selectedRows()
-        row = indexes[0].row()
-        menu = QMenu(self)
-        quitAction = menu.addAction("Удалить")
-        action = menu.exec_(self.table_records.viewport().mapToGlobal(position))
+        if indexes:
+            row = indexes[0].row()
 
-        if action == quitAction:
-            date_time = self.table_records.item(row, 0).text()
-            unixtime = self.utc_datetime_to_unix_time(datetime.datetime.strptime(date_time, '%Y-%m-%d %H:%M:%S'))
-            item = self.table_records.item(row, 1).text()
-            summ = self.table_records.item(row, 2).text()
+            menu = QMenu(self)
+            quitAction = menu.addAction("Удалить")
+            action = menu.exec_(self.table_records.viewport().mapToGlobal(position))
 
-            flag = True
-            for row in self.data_incomes:
-                if item == row[1]:
-                    flag = False
+            if action == quitAction:
+                date_time = self.table_records.item(row, 0).text()
+                unixtime = self.utc_datetime_to_unix_time(datetime.datetime.strptime(date_time, '%Y-%m-%d %H:%M:%S'))
+                item = self.table_records.item(row, 1).text()
+                summ = self.table_records.item(row, 2).text()
 
-            try:
-                if flag:
-                    self.cur_db.execute(
-                        "UPDATE costs_records SET del=? WHERE datetime=? AND sum=?", (
-                            1, unixtime, summ
-                        ))
+                flag = True
+                for row in self.data_incomes:
+                    if item == row[1]:
+                        flag = False
+
+                try:
+                    if flag:
+                        self.cur_db.execute(
+                            "UPDATE costs_records SET del=? WHERE datetime=? AND sum=?", (
+                                1, unixtime, summ
+                            ))
+                    else:
+                        self.cur_db.execute(
+                            "UPDATE income_records SET del=? WHERE datetime=? AND sum=?", (
+                                1, unixtime, summ
+                            ))
+                except sqlite3.DatabaseError as err:
+                    QMessageBox.warning(
+                        self, 'Error', '#9 Error db: {}'.format(err))
                 else:
-                    self.cur_db.execute(
-                        "UPDATE income_records SET del=? WHERE datetime=? AND sum=?", (
-                            1, unixtime, summ
-                        ))
-            except sqlite3.DatabaseError as err:
-                QMessageBox.warning(
-                    self, 'Error', '#9 Error db: {}'.format(err))
-            else:
-                self.conn.commit()
-                self.update_data_in_ui()
+                    self.conn.commit()
+                    self.update_data_in_ui()
 
     def update_data_in_ui(self):
         # Получим список статей дохода
@@ -617,7 +620,6 @@ class Window(QMainWindow):
         event.accept()
 
 
-
 def init_db(cur_db):
     sql_create_costs_table = """ CREATE TABLE IF NOT EXISTS `costs` (
                                     `id`	INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -658,7 +660,6 @@ def init_db(cur_db):
                                                     `pass`	TEXT NOT NULL                                                        
                                                 );"""
 
-
     try:
         cur_db.execute(sql_create_costs_table)
         cur_db.execute(sql_create_incomes_table)
@@ -673,6 +674,7 @@ def init_db(cur_db):
 if __name__ == '__main__':
 
     import sys
+    from os.path import expanduser
 
     app = QApplication(sys.argv)
     app.setStyle("fusion")
@@ -681,7 +683,8 @@ if __name__ == '__main__':
     p.setColor(QtGui.QPalette.Highlight, QtGui.QColor(77, 98, 120))
     qApp.setPalette(p)
 
-    db_file = "family_finances.db"
+    home = expanduser("~")
+    db_file = "{}/family_finances.db".format(home)
     # Подключение к базе SQLite
     try:
         conn = sqlite3.connect(db_file)
@@ -694,15 +697,14 @@ if __name__ == '__main__':
             create_user = CreateUser(db_file)
             if create_user.exec_() == QDialog.Accepted:
                 login = Login(db_file)
-        else:
-            login = Login(db_file)
 
     except sqlite3.DatabaseError as err:
-        print(err)
+        print("#1 - {}".format(err))
 
+    login = Login(db_file)
 
     if login.exec_() == QDialog.Accepted:
-        window = Window()
+        window = Window(db_file)
         # window.showMaximized()
         # window.show()
         sys.exit(app.exec_())
