@@ -73,6 +73,7 @@ class Login(QDialog):
 
         self.text_name = QLineEdit(self)
         self.text_pass = QLineEdit(self)
+        self.text_pass.setEchoMode(QLineEdit.Password)
 
         self.label_name = QLabel(self)
         self.label_pass = QLabel(self)
