@@ -1,3 +1,4 @@
+import decimal
 import hashlib
 import os
 
@@ -258,7 +259,7 @@ class Window(QMainWindow):
 
                     worksheet.write(i, 1, self.unix_time_to_datetime_utc(row[1][1]), bgcolor)  # Дата
 
-                    worksheet.write_number(i, 3, float(str(row[1][2]).replace(",", ".")), bgcolor)  # Сумма
+                    worksheet.write_number(i, 3, row[1][2] / 100, bgcolor)  # Сумма
                     i += 1
 
                 workbook.close()
@@ -415,6 +416,7 @@ class Window(QMainWindow):
             for row in self.data_costs:
                 if row[1] == self.combobox_costs.currentText():
                     id_item = row[0]
+                    # for i in range(1000):
                     self.add_costs(datetime_now, self.line_sum_costs.text(), id_item)
 
         self.update_data_in_ui()
@@ -444,10 +446,11 @@ class Window(QMainWindow):
 
     # Функция добавления доходов
     def add_incomes(self, datetime_now, summ, id_item):
+
         try:
             self.cur_db.execute(
                 "INSERT INTO income_records (datetime, sum, id_item) VALUES (?, ?, ?)",
-                (datetime_now, summ, id_item))
+                (datetime_now, summ.replace(",", ""), id_item))
         except sqlite3.DatabaseError as err:
             QMessageBox.warning(
                 self, 'Error', '#7 Error db: {}'.format(err))
@@ -456,10 +459,11 @@ class Window(QMainWindow):
 
     # Функция добавления расходов
     def add_costs(self, datetime_now, summ, id_item):
+
         try:
             self.cur_db.execute(
                 "INSERT INTO costs_records (datetime, sum, id_item) VALUES (?, ?, ?)",
-                (datetime_now, summ, id_item))
+                (datetime_now, summ.replace(",", ""), id_item))
         except sqlite3.DatabaseError as err:
             QMessageBox.warning(
                 self, 'Error', '#8 Error db: {}'.format(err))
@@ -556,9 +560,10 @@ class Window(QMainWindow):
 
         for inx, row in enumerate(all):
             table.insertRow(inx)
-            table.setItem(inx, 0, QTableWidgetItem(str(self.unix_time_to_datetime_utc(row[1][1]))))
+            table.setItem(inx, 0, QTableWidgetItem(str(self.unix_time_to_datetime_utc(row[1][1])))) #Дата
 
-            table.setItem(inx, 2, QTableWidgetItem(str(row[1][2])))
+            rub = decimal.Decimal(row[1][2])/100
+            table.setItem(inx, 2, QTableWidgetItem("{0:.2f}".format(rub))) #Cумма
             table.setItem(inx, 1, QTableWidgetItem("Статья отсутствует"))
 
             # table.setItem(inx, 1, QTableWidgetItem(str(row[0])))
@@ -625,25 +630,22 @@ def init_db(cur_db):
     sql_create_costs_table = """ CREATE TABLE IF NOT EXISTS `costs` (
                                     `id`	INTEGER PRIMARY KEY AUTOINCREMENT,
                                     `name`	TEXT NOT NULL UNIQUE,
-                                    `expiration_date`	INTEGER,
-                                    `visible`	INTEGER NOT NULL DEFAULT 1
+                                    `expiration_date`	INTEGER
                                 );"""
 
     sql_create_incomes_table = """ CREATE TABLE IF NOT EXISTS `incomes` (
-                                            `id`	INTEGER,
+                                            `id`	INTEGER PRIMARY KEY AUTOINCREMENT,
                                             `name`	TEXT NOT NULL UNIQUE,
-                                            `expiration_date`	INTEGER,
-                                            `visible`	INTEGER NOT NULL DEFAULT 1,
-                                            PRIMARY KEY(`id`)
+                                            `expiration_date`	INTEGER                                            
+                                           
                                         );"""
 
     sql_create_costs_records_table = """ CREATE TABLE IF NOT EXISTS `costs_records` (
-                                            `id`	INTEGER,
+                                            `id`	INTEGER PRIMARY KEY AUTOINCREMENT,
                                             `datetime`	INTEGER NOT NULL,
                                             `sum`	INTEGER NOT NULL,
                                             `id_item`	INTEGER NOT NULL,
-                                            `del`	INTEGER NOT NULL DEFAULT 0,
-                                            PRIMARY KEY(`id`),
+                                            `del`	INTEGER NOT NULL DEFAULT 0,                                            
                                             FOREIGN KEY(`id_item`) REFERENCES `costs`(`id`)
                                         );"""
 
